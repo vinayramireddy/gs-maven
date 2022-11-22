@@ -1,44 +1,40 @@
 pipeline {
-	agent none
+	agent any
 
-	triggers {
-		pollSCM 'H/10 * * * *'
+	tools {
+		maven 'maventest'
 	}
 
-	options {
-		disableConcurrentBuilds()
-		buildDiscarder(logRotator(numToKeepStr: '14'))
+	environment{
+	  ALPHA="develop"
+      BETA="release"
+      RC="master"	
 	}
 
 	stages {
-		stage("test: baseline (jdk8)") {
-			agent {
-				docker {
-					image 'adoptopenjdk/openjdk8:latest'
-					args '-v $HOME/.m2:/tmp/jenkins-home/.m2'
-				}
-			}
-			options { timeout(time: 30, unit: 'MINUTES') }
-			steps {
-				sh 'test/run.sh'
+		stage('download') {
+			steps{
+			 git branch: 'develop', url: 'https://github.com/vinayramireddy/gs-maven.git'
 			}
 		}
-
-	}
-
-	post {
-		changed {
-			script {
-				slackSend(
-						color: (currentBuild.currentResult == 'SUCCESS') ? 'good' : 'danger',
-						channel: '#sagan-content',
-						message: "${currentBuild.fullDisplayName} - `${currentBuild.currentResult}`\n${env.BUILD_URL}")
-				emailext(
-						subject: "[${currentBuild.fullDisplayName}] ${currentBuild.currentResult}",
-						mimeType: 'text/html',
-						recipientProviders: [[$class: 'CulpritsRecipientProvider'], [$class: 'RequesterRecipientProvider']],
-						body: "<a href=\"${env.BUILD_URL}\">${currentBuild.fullDisplayName} is reported as ${currentBuild.currentResult}</a>")
-			}
+		
+		stage ('build'){
+		   steps{
+			dir('complete') {	   
+		   	sh  'mvn clean package'
+		   	}
+		  }
+		}
+		
+		
+		
+                stage ('deploy to qa'){
+		when {anyOf {branch BETA;}
+		}
+		steps{
+		      deploy adapters: [tomcat9(credentialsId: 'c9c0feb8-2347-4044-82d5-f22f0d96378d', 
+		      path: '', url: 'http://172.31.32.73:7070')], contextPath: 'qaenv', war: '**/*.war'
+		}
 		}
 	}
-}
+	}
